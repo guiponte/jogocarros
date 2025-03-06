@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Corrida Veloz</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #222;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        
+        #gameContainer {
+            position: relative;
+        }
+        
+        #gameCanvas {
+            border: 2px solid #333;
+            background-color: #555;
+            display: block;
+        }
+        
+        #startScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+        }
+        
+        #gameOverScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+        }
+        
+        button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        
+        #scoreBoard {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="400" height="600"></canvas>
+        <div id="scoreBoard">Pontuação: 0</div>
+        <div id="startScreen">
+            <h1>Corrida Veloz</h1>
+            <p>Use as setas ← → para mover o carro</p>
+            <button id="startButton">Iniciar Jogo</button>
+        </div>
+        <div id="gameOverScreen">
+            <h1>Fim de Jogo!</h1>
+            <p id="finalScore">Pontuação: 0</p>
+            <button id="restartButton">Jogar Novamente</button>
+        </div>
+    </div>
+
+    <script>
+        // Elementos do DOM
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const startScreen = document.getElementById('startScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const startButton = document.getElementById('startButton');
+        const restartButton = document.getElementById('restartButton');
+        const scoreBoard = document.getElementById('scoreBoard');
+        const finalScore = document.getElementById('finalScore');
+
+        // Configurações do jogo
+        const GAME_WIDTH = canvas.width;
+        const GAME_HEIGHT = canvas.height;
+        const LANE_WIDTH = GAME_WIDTH / 3;
+        const CAR_WIDTH = 40;
+        const CAR_HEIGHT = 70;
+        const OBSTACLE_WIDTH = 40;
+        const OBSTACLE_HEIGHT = 70;
+        const INITIAL_SPEED = 5;
+        const SPEED_INCREMENT = 0.001;
+        
+        // Estado do jogo
+        let gameRunning = false;
+        let score = 0;
+        let speed = INITIAL_SPEED;
+        let roadOffset = 0;
+        let lanes = [LANE_WIDTH / 2, LANE_WIDTH + LANE_WIDTH / 2, 2 * LANE_WIDTH + LANE_WIDTH / 2];
+        let currentLane = 1;
+        let obstacles = [];
+        let lastObstacleTime = 0;
+        let obstacleInterval = 1500; // ms
+        
+        // Controles
+        let keys = {
+            ArrowLeft: false,
+            ArrowRight: false,
+        };
+        
+        // Carro do jogador
+        const playerCar = {
+            x: lanes[currentLane] - CAR_WIDTH / 2,
+            y: GAME_HEIGHT - CAR_HEIGHT - 20,
+            width: CAR_WIDTH,
+            height: CAR_HEIGHT,
+            color: '#22A7F0'
+        };
+        
+        // Eventos de teclado
+        window.addEventListener('keydown', function(e) {
+            if (e.key in keys) {
+                keys[e.key] = true;
+                e.preventDefault();
+            }
+        });
+        
+        window.addEventListener('keyup', function(e) {
+            if (e.key in keys) {
+                keys[e.key] = false;
+                e.preventDefault();
+            }
+        });
+        
+        // Iniciar jogo ao clicar no botão
+        startButton.addEventListener('click', startGame);
+        restartButton.addEventListener('click', restartGame);
+        
+        // Funções do jogo
+        function startGame() {
+            startScreen.style.display = 'none';
+            gameRunning = true;
+            score = 0;
+            speed = INITIAL_SPEED;
+            obstacles = [];
+            lastObstacleTime = Date.now();
+            currentLane = 1;
+            playerCar.x = lanes[currentLane] - CAR_WIDTH / 2;
+            updateScore();
+            
+            // Iniciar o loop do jogo
+            requestAnimationFrame(gameLoop);
+        }
+        
+        function restartGame() {
+            gameOverScreen.style.display = 'none';
+            startGame();
+        }
+        
+        function gameLoop(timestamp) {
+            if (!gameRunning) return;
+            
+            update();
+            render();
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        function update() {
+            // Atualizar pontuação
+            score += speed * 0.1;
+            updateScore();
+            
+            // Aumentar a velocidade gradualmente
+            speed += SPEED_INCREMENT;
+            
+            // Movimento da estrada (fundo)
+            roadOffset += speed;
+            if (roadOffset >= 40) {
+                roadOffset = 0;
+            }
+            
+            // Processar input do jogador
+            if (keys.ArrowLeft && currentLane > 0) {
+                currentLane--;
+                keys.ArrowLeft = false;
+            }
+            if (keys.ArrowRight && currentLane < 2) {
+                currentLane++;
+                keys.ArrowRight = false;
+            }
+            
+            // Atualizar posição do carro do jogador suavemente
+            const targetX = lanes[currentLane] - CAR_WIDTH / 2;
+            playerCar.x += (targetX - playerCar.x) * 0.1;
+            
+            // Gerar obstáculos
+            const currentTime = Date.now();
+            if (currentTime - lastObstacleTime > obstacleInterval) {
+                createObstacle();
+                lastObstacleTime = currentTime;
+                // Diminuir o intervalo conforme o jogo avança (mais difícil)
+                obstacleInterval = Math.max(500, obstacleInterval - 10);
+            }
+            
+            // Atualizar obstáculos
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                obstacles[i].y += speed;
+                
+                // Remover obstáculos que saíram da tela
+                if (obstacles[i].y > GAME_HEIGHT) {
+                    obstacles.splice(i, 1);
+                    continue;
+                }
+                
+                // Verificar colisão
+                if (checkCollision(playerCar, obstacles[i])) {
+                    gameOver();
+                    return;
+                }
+            }
+        }
+        
+        function createObstacle() {
+            const lane = Math.floor(Math.random() * 3);
+            const obstacle = {
+                x: lanes[lane] - OBSTACLE_WIDTH / 2,
+                y: -OBSTACLE_HEIGHT,
+                width: OBSTACLE_WIDTH,
+                height: OBSTACLE_HEIGHT,
+                color: '#E74C3C'
+            };
+            obstacles.push(obstacle);
+        }
+        
+        function checkCollision(car, obstacle) {
+            return (
+                car.x < obstacle.x + obstacle.width &&
+                car.x + car.width > obstacle.x &&
+                car.y < obstacle.y + obstacle.height &&
+                car.y + car.height > obstacle.y
+            );
+        }
+        
+        function gameOver() {
+            gameRunning = false;
+            finalScore.textContent = `Pontuação: ${Math.floor(score)}`;
+            gameOverScreen.style.display = 'flex';
+        }
+        
+        function updateScore() {
+            scoreBoard.textContent = `Pontuação: ${Math.floor(score)}`;
+        }
+        
+        function render() {
+            // Limpar canvas
+            ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+            
+            // Desenhar fundo (estrada)
+            drawRoad();
+            
+            // Desenhar obstáculos
+            for (const obstacle of obstacles) {
+                drawCar(obstacle);
+            }
+            
+            // Desenhar carro do jogador
+            drawCar(playerCar);
+        }
+        
+        function drawRoad() {
+            // Cor de fundo da estrada
+            ctx.fillStyle = '#333';
+            ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+            
+            // Linhas divisórias
+            ctx.strokeStyle = '#FFF';
+            ctx.lineWidth = 5;
+            
+            // Linha da esquerda
+            ctx.beginPath();
+            ctx.setLineDash([20, 20]);
+            ctx.moveTo(LANE_WIDTH, 0);
+            ctx.lineTo(LANE_WIDTH, GAME_HEIGHT);
+            ctx.stroke();
+            
+            // Linha da direita
+            ctx.beginPath();
+            ctx.moveTo(2 * LANE_WIDTH, 0);
+            ctx.lineTo(2 * LANE_WIDTH, GAME_HEIGHT);
+            ctx.stroke();
+            
+            // Linhas horizontais (ilusão de movimento)
+            ctx.lineWidth = 3;
+            for (let i = -40 + roadOffset; i < GAME_HEIGHT; i += 40) {
+                // Marcadores na pista
+                for (let lane = 0; lane < 3; lane++) {
+                    ctx.fillStyle = '#FFF';
+                    ctx.fillRect(lanes[lane] - 2, i, 4, 20);
+                }
+            }
+        }
+        
+        function drawCar(car) {
+            // Desenhar corpo do carro
+            ctx.fillStyle = car.color;
+            ctx.fillRect(car.x, car.y, car.width, car.height);
+            
+            // Desenhar janelas
+            ctx.fillStyle = '#000';
+            ctx.fillRect(car.x + 5, car.y + 5, car.width - 10, car.height / 3);
+            ctx.fillRect(car.x + 5, car.y + car.height - 20, car.width - 10, 15);
+            
+            // Desenhar rodas
+            ctx.fillStyle = '#000';
+            ctx.fillRect(car.x - 3, car.y + 10, 3, 15);
+            ctx.fillRect(car.x + car.width, car.y + 10, 3, 15);
+            ctx.fillRect(car.x - 3, car.y + car.height - 25, 3, 15);
+            ctx.fillRect(car.x + car.width, car.y + car.height - 25, 3, 15);
+        }
+        
+        // Renderizar tela inicial
+        render();
+    </script>
+</body>
+</html>
